@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+
+import rospy
+import matplotlib.pyplot as plt
+from sensor_msgs.msg import JointState
+from markers import *
+from lab6functions import *
+from mpl_toolkits.mplot3d import Axes3D
+
+if __name__ == '__main__':
+
+ # Initialize the node
+ rospy.init_node("testKineControlPosition")
+ print('starting motion ... ')
+ # Publisher: publish to the joint_states topic
+ pub = rospy.Publisher('joint_states', JointState, queue_size=10)
+ # Files for the logs
+ fxcurrent = open("/home/victor/Labs_1/Archivos/xactual.txt", "w")                
+ fxdesired = open("/home/victor/Labs_1/Archivos/xdeseado.txt", "w")
+ fq = open("/home/victor/lab_ws/src/frlabs/lab6/src/temp/q.txt", "w")
+
+ # Markers for the current and desired positions
+ bmarker_current  = BallMarker(color['RED'])
+ bmarker_desired = BallMarker(color['GREEN'])
+
+ # Joint names
+ jnames = ("joint1","joint2","joint3", "joint4", "joint5","joint6", "joint7")
+
+ # Desired position
+ xd = np.array([0.8, 0.4, 0.8])
+ # Initial configuration
+ q0 = np.array([-0.1, 0.1, 0.04, 0.00, -0.2, 0.1, 0])
+
+ # Resulting initial position (end effector with respect to the base link)
+ T = fkine(q0)
+ x0 = T[0:3,3]
+
+ # Red marker shows the achieved position
+ bmarker_current.xyz(x0)
+ # Green marker shows the desired position
+ bmarker_desired.xyz(xd)
+
+ # Instance of the JointState message
+ jstate = JointState()
+ # Values of the message
+ jstate.header.stamp = rospy.Time.now()
+ jstate.name = jnames
+ # Add the head joint value (with value 0) to the joints
+ jstate.position = q0
+
+ # Frequency (in Hz) and control period 
+ freq = 200
+ dt = 1.0/freq
+ rate = rospy.Rate(freq)
+
+ # Initial joint configuration
+ q = copy(q0)
+ # Main loop
+ k=1
+ while not rospy.is_shutdown():
+  # Current time (needed for ROS)
+  jstate.header.stamp = rospy.Time.now()
+  # Kinematic control law for position (complete here)
+  # -----------------------------
+  T=fkine(q)
+  x=T[:3, 3];
+  e=x-xd;
+  J=jacobian(q, delta=0.0001)
+  J_inv = np.linalg.pinv(J)
+  qd=-J_inv*k @ e
+  q = q+dt*qd
+        
+  # -----------------------------     
+  # Log values                                                      
+  fxcurrent.write(str(x[0])+' '+str(x[1]) +' '+str(x[2])+'\n')
+  fxdesired.write(str(xd[0])+' '+str(xd[1])+' '+str(xd[2])+'\n')
+  fq.write(str(q[0])+" "+str(q[1])+" "+str(q[2])+" "+str(q[3])+" "+
+           str(q[4])+" "+str(q[5])+"\n")
+  # Publish the message
+  jstate.position = q
+  pub.publish(jstate)
+  bmarker_desired.xyz(xd)
+  bmarker_current.xyz(x)
+  # Wait for the next iteration
+  rate.sleep()
+
+ print('ending motion ...')
+ fxcurrent.close()
+ fxdesired.close()
+ fq.close()
+ 
+
+# Leer el archivo y extraer las posiciones
+with open("/home/victor/lab_ws/src/frlabs/lab6/src/temp/xcurrent.txt", "r") as file:
+    posiciones = [list(map(float, line.split())) for line in file]
+with open("/home/victor/lab_ws/src/frlabs/lab6/src/temp/xdesired.txt", "r") as file:
+    posicionesd = [list(map(float, line.split())) for line in file]
+
+
+# Separar los valores de x, y y z en listas
+x_values = [pos[0] for pos in posiciones]
+y_values = [pos[1] for pos in posiciones]
+z_values = [pos[2] for pos in posiciones]
+x_valuesd = [pos[0] for pos in posicionesd]
+y_valuesd = [pos[1] for pos in posicionesd]
+z_valuesd = [pos[2] for pos in posicionesd]
+#tiempo = range(0, len(posiciones))/freq  # Crear una lista de tiempos desde 1 hasta el número de posiciones
+tiempo = np.arange(len(posiciones)) / freq
+
+# Crear el gráfico
+plt.figure(figsize=(10, 6))
+plt.plot(tiempo, x_values, label="x", color="r")
+plt.plot(tiempo, y_values, label="y", color="g")
+plt.plot(tiempo, z_values, label="z", color="b")
+plt.plot(tiempo, x_valuesd, label="x_ref", color="#FFA500")  # Naranja
+plt.plot(tiempo, y_valuesd, label="y_ref", color="#7CFC00")  # Caña verde
+plt.plot(tiempo, z_valuesd, label="z_ref", color="#00BFFF")  # Celeste
+# Añadir etiquetas y leyenda
+plt.xlabel("Tiempo")
+plt.ylabel("Posiciones")
+plt.title("Posiciones x, y, z en función del tiempo con k=10")
+plt.legend()
+
+# Mostrar el gráfico
+plt.grid(True)
+plt.show()
+# graficando x y z
+
+
+# Crear el gráfico 3D
+fig2 = plt.figure(figsize=(10, 6))
+ax = fig2.add_subplot(111, projection='3d')
+
+# Graficar las posiciones en 3D
+ax.plot(x_values, y_values, z_values, color='gray', label="Trayectoria")
+ax.scatter(x_values, y_values, z_values, c='r', label="Posicion", alpha=0.6)
+ax.scatter(x_valuesd, y_valuesd, z_valuesd, c='g', label="Posicion_ref", alpha=0.6)
+# Etiquetas de los ejes
+ax.set_xlabel("X ", color="r")
+ax.set_ylabel("Y ", color="g")
+ax.set_zlabel("Z ", color="b")
+
+# Título y leyenda
+plt.title("Posiciones en el espacio con k=10")
+plt.legend()
+
+# Mostrar el gráfico
+plt.show()
+
